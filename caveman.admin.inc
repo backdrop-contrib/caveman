@@ -21,7 +21,7 @@ function caveman_admin_settings($form, &$form_state) {
 
 function caveman_admin_settings_submit($form, &$form_state) {
   $config = config('caveman.settings');
-  $config->set('caveman_enabled', (bool) $form_state['values']['caveman_override']);
+  $config->set('caveman_override', (bool) $form_state['values']['caveman_override']);
   $config->save();
 
   backdrop_set_message(t('Settings saved.'));

@@ -1,5 +1,5 @@
 {
     "_config_name": "caveman.settings",
     "_module": "caveman",
-    "caveman_enabled": false
+    "caveman_override": false
 }
