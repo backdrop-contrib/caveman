@@ -61,10 +61,17 @@ function caveman_filter_settings($form, $form_state, $filter, $format, $defaults
 }
 
 /**
+ * Returns TRUE on April 1 in the site timezone.
+ */
+function caveman_is_april_fools() {
+  return format_date(REQUEST_TIME, 'custom', 'n-j') === '4-1';
+}
+
+/**
  * Main filter process.
  */
 function caveman_filter_process($text, $filter = NULL) {
-  if (!config_get('caveman.settings', 'caveman_enabled')) {
+  if (!config_get('caveman.settings', 'caveman_override') && !caveman_is_april_fools()) {
     return $text;
   }
   $ignore_tags = 'a|script|style|code|pre';
