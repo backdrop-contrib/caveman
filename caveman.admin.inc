@@ -9,7 +9,7 @@ function caveman_admin_settings($form, &$form_state) {
     '#type' => 'checkbox',
     '#title' => t('Enable Caveman filter'),
     '#default_value' => (bool) config_get('caveman.settings', 'caveman_override'),
-    '#description' => t('Enable caveman-speak site-wide. It also auto-enables on April 1st.'),
+    '#description' => t('Me turn caveman talk on site-wide. On April 1, filter still go even if this off.'),
   );
   $form['actions']['#type'] = 'actions';
   $form['actions']['submit'] = array(

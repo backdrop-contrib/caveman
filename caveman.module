@@ -71,8 +71,7 @@ function caveman_is_april_fools() {
  * Main filter process.
  */
 function caveman_filter_process($text, $filter = NULL) {
-  if (!config_get('caveman.settings', 'caveman_override') && 
-    !caveman_is_april_fools()) {
+  if (!config_get('caveman.settings', 'caveman_override') && !caveman_is_april_fools()) {
     return $text;
   }
   $ignore_tags = 'a|script|style|code|pre';
