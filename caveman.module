@@ -5,11 +5,11 @@
  */
 
 /**
- * Caveman configuration info mapping for config UI.
+ * Implements hook_config_info().
  */
 function caveman_config_info() {
-  $prefixes['caveman.grunt'] = array(
-    'label' => t('Caveman Settings'),
+  $prefixes['caveman.settings'] = array(
+    'label' => t('Caveman settings'),
     'group' => t('Configuration'),
   );
   return $prefixes;
@@ -36,12 +36,11 @@ function caveman_menu() {
 function caveman_filter_info() {
   $filters['caveman'] = array(
     'title' => t('Caveman filter'),
-    'description' => t('Make text sound like a caveman.'),
+    'description' => t('Turn text into caveman speak. Short. Strong.'),
     'process callback' => 'caveman_filter_process',
     'settings callback' => 'caveman_filter_settings',
     'default settings' => array(
       'caveman_display_tip' => 1,
-      'intensity' => 'medium',
     ),
     'tips callback' => 'caveman_filter_tips',
   );
@@ -49,52 +48,33 @@ function caveman_filter_info() {
 }
 
 /**
- * Filter settings callback.
+ * Filter settings.
  */
 function caveman_filter_settings($form, $form_state, $filter, $format, $defaults = array()) {
-  $settings['intensity'] = array(
-    '#type' => 'select',
-    '#title' => t('Caveman intensity'),
-    '#options' => array(
-      'low' => t('Low'),
-      'medium' => t('Medium'),
-      'high' => t('UNGA (High)'),
+  return array(
+    'caveman_display_tip' => array(
+      '#type' => 'checkbox',
+      '#title' => t('Display Caveman tip'),
+      '#default_value' => isset($filter->settings['caveman_display_tip']) ? $filter->settings['caveman_display_tip'] : 1,
     ),
-    '#default_value' => isset($filter->settings['intensity']) ? $filter->settings['intensity'] : 'medium',
   );
-
-  $settings['caveman_display_tip'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Display Caveman filter tip'),
-    '#default_value' => isset($filter->settings['caveman_display_tip']) ? $filter->settings['caveman_display_tip'] : 1,
-  );
-
-  return $settings;
 }
 
 /**
  * Main filter process.
  */
 function caveman_filter_process($text, $filter = NULL) {
-  $override = config_get('caveman.grunt', 'caveman_override');
-  $is_april_fools = (format_date(REQUEST_TIME, 'custom', 'md') == '0401');
-
-  if (!$override && !$is_april_fools) {
+  if (!config_get('caveman.settings', 'caveman_enabled')) {
     return $text;
   }
-
-  $intensity = isset($filter->settings['intensity']) ? $filter->settings['intensity'] : 'medium';
-
-  // Protect certain tags.
   $ignore_tags = 'a|script|style|code|pre';
   $open_tag = '';
   $chunks = preg_split('/(<.+?>)/is', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
 
   for ($i = 0; $i < count($chunks); $i++) {
     if (!empty($chunks[$i]) && $chunks[$i][0] != '<') {
-      // Skip text within ignored tags such as links, code and script blocks.
       if ($open_tag == '') {
-        $chunks[$i] = caveman_transform($chunks[$i], $intensity);
+        $chunks[$i] = caveman_transform($chunks[$i]);
       }
     }
     else {
@@ -115,26 +95,61 @@ function caveman_filter_process($text, $filter = NULL) {
 }
 
 /**
- * Core transformation pipeline.
+ * Transform full text.
  */
-function caveman_transform($text, $intensity = 'medium') {
+function caveman_transform($text) {
+  $sentences = caveman_split_sentences($text);
 
-  // --- 1. Phrase replacements ---
-  $text = preg_replace([
-    '%\bthank you\b%i',
-    '%\bthanks\b%i',
-    '%\bhow are you\b%i',
-    '%\bI am\b%i',
-    '%\bI will\b%i',
-    '%\bI have\b%i',
-    '%\bgoing to\b%i',
-    '%\bdo not\b%i',
-    '%\bdon\'t\b%i',
-    '%\bcan\'t\b%i',
+  foreach ($sentences as &$sentence) {
+    $sentence = caveman_rewrite_sentence($sentence);
+    $sentence = caveman_word_flavor($sentence);
+  }
+
+  $text = implode(' ', $sentences);
+  $text = caveman_add_flavor($text);
+  $text = caveman_emphasis($text);
+
+  return trim($text);
+}
+
+/**
+ * Split sentences.
+ */
+function caveman_split_sentences($text) {
+  return preg_split('/(?<=[.!?])\s+/', $text);
+}
+
+/**
+ * Rewrite sentence structure — full caveman, no mercy.
+ */
+function caveman_rewrite_sentence($sentence) {
+  $s = strtolower(trim($sentence));
+
+  // Flatten questions: "do you want" → "you want"
+  $s = preg_replace('%^(?:do|does|did|can|could|will|would|should|shall|may|might|must)\s+%', '', $s);
+
+  // Phrase normalization
+  $s = preg_replace([
+    '%\bi am\b%',
+    '%\bi will\b%',
+    '%\bi have\b%',
+    '%\bgoing to\b%',
+    '%\bdo not\b%',
+    "%\bdon't\b%",
+    "%\bcan't\b%",
+    "%\bwon't\b%",
+    "%\bwouldn't\b%",
+    "%\bcouldn't\b%",
+    "%\bshouldn't\b%",
+    '%\bbecause\b%',
+    '%\balthough\b%',
+    '%\bhowever\b%',
+    '%\btherefore\b%',
+    '%\bconsequently\b%',
+    '%\bfurthermore\b%',
+    '%\bnevertheless\b%',
+    '%\bmoreover\b%',
   ], [
-    'UNGA',
-    'UNGA',
-    'you good?',
     'me',
     'me gonna',
     'me got',
@@ -142,69 +157,284 @@ function caveman_transform($text, $intensity = 'medium') {
     'no',
     'no',
     'no can',
-  ], $text);
+    'no gonna',
+    'no want',
+    'no can',
+    'no should',
+    '.',
+    '.',
+    '.',
+    '.',
+    '.',
+    '.',
+    '.',
+    '.',
+  ], $s);
 
-  // --- 2. Word replacements ---
-  $text = preg_replace([
-    '%\bI\b%i',
-    '%\bmy\b%i',
-    '%\bmine\b%i',
-    '%\bthey\b%i',
-    '%\bis\b%i',
-    '%\bare\b%i',
-    '%\bwas\b%i',
-    '%\bwere\b%i',
-    '%\bhave\b%i',
-    '%\bhas\b%i',
-    '%\bhello\b%i',
-    '%\bhi\b%i',
-    '%\bfriend\b%i',
-    '%\bcomputer\b%i',
-    '%\binternet\b%i',
-    '%\bhouse\b%i',
+  // Pronouns
+  $s = preg_replace(['%\bi\b%', '%\bmy\b%', '%\bmine\b%'], ['me', 'me', 'me'], $s);
+
+  // Modal verbs
+  $s = preg_replace([
+    '%\bwould\b%',
+    '%\bcould\b%',
+    '%\bshould\b%',
+    '%\bmight\b%',
+    '%\bmay\b%',
+    '%\bmust\b%',
+    '%\bshall\b%',
   ], [
-    'me',
-    'me',
-    'me',
-    'them',
+    'want',
+    'can',
+    'must',
+    'maybe',
+    'maybe',
+    'MUST',
+    'gonna',
+  ], $s);
+
+  // Verb simplification
+  $s = preg_replace([
+    '%\bis\b%',
+    '%\bare\b%',
+    '%\bwas\b%',
+    '%\bwere\b%',
+    '%\bhave\b%',
+    '%\bhas\b%',
+    '%\bhad\b%',
+  ], [
     'be',
     'be',
     'be',
     'be',
     'got',
     'got',
-    'UGH',
-    'UGH',
-    'cave-friend',
-    'magic rock',
-    'big web',
-    'cave',
-  ], $text);
+    'got',
+  ], $s);
 
-  // --- 3. Structure ---
-  if ($intensity !== 'low') {
-    $text = preg_replace('/,\s*/', '. ', $text);
-    $text = preg_replace('/\bbecause\b/i', '.', $text);
+  // Remove filler words
+  $s = preg_replace([
+    '%\bthe\b%',
+    '%\bthat\b%',
+    '%\bvery\b%',
+    '%\breally\b%',
+    '%\bjust\b%',
+    '%\bactually\b%',
+    '%\bbasically\b%',
+    '%\bsimply\b%',
+    '%\bquite\b%',
+    '%\brather\b%',
+    '%\bsomewhat\b%',
+  ], '', $s);
+
+  // Break at commas and connectives
+  $s = preg_replace(['/,\s*/', '%\band then\b%', '%\band also\b%'], '. ', $s);
+
+  // Drop prepositions
+  $s = preg_replace([
+    '%\binto\b%',
+    '%\bonto\b%',
+    '%\bupon\b%',
+    '%\bwithin\b%',
+    '%\btoward\b%',
+    '%\btowards\b%',
+    '%\babout\b%',
+    '%\baround\b%',
+    '%\bbetween\b%',
+    '%\bamong\b%',
+    '%\bagainst\b%',
+    '%\bduring\b%',
+  ], '', $s);
+
+  // Cleanup
+  $s = preg_replace('/\s+/', ' ', $s);
+  $s = trim($s);
+
+  // Force caveman rhythm
+  $parts = preg_split('/\./', $s);
+  $parts = array_filter(array_map('trim', $parts));
+
+  return implode('. ', $parts) . '.';
+}
+
+/**
+ * Caveman dictionary (flavor layer).
+ */
+function caveman_word_flavor($text) {
+  $map = [
+    // Transport — plural before singular.
+    '%\bairplanes\b%i'    => 'big flying beasts',
+    '%\bairplane\b%i'     => 'big flying beast',
+    '%\bplanes\b%i'       => 'flying beasts',
+    '%\bplane\b%i'        => 'flying beast',
+    '%\bsailplanes\b%i'   => 'wind-riding flying beasts',
+    '%\bsailplane\b%i'    => 'wind-riding flying beast',
+    '%\bgliders\b%i'      => 'sky breath riders',
+    '%\bglider\b%i'       => 'sky breath rider',
+    '%\bcars\b%i'         => 'fast beasts',
+    '%\bcar\b%i'          => 'fast beast',
+    '%\btrucks\b%i'       => 'big fast beasts',
+    '%\btruck\b%i'        => 'big fast beast',
+    '%\bboats\b%i'        => 'water beasts',
+    '%\bboat\b%i'         => 'water beast',
+    '%\bbikes\b%i'        => 'two wheel beasts',
+    '%\bbike\b%i'         => 'two wheel beast',
+    '%\btrains\b%i'       => 'loud ground beasts',
+    '%\btrain\b%i'        => 'loud ground beast',
+    // Tech.
+    '%\bcomputers\b%i'    => 'magic rocks',
+    '%\bcomputer\b%i'     => 'magic rock',
+    '%\bphones\b%i'       => 'talk rocks',
+    '%\bphone\b%i'        => 'talk rock',
+    '%\bemails\b%i'       => 'message marks',
+    '%\bemail\b%i'        => 'message mark',
+    '%\bvideos\b%i'       => 'moving pictures',
+    '%\bvideo\b%i'        => 'moving picture',
+    '%\binternet\b%i'     => 'big web',
+    '%\bwebsites\b%i'     => 'cave walls',
+    '%\bwebsite\b%i'      => 'cave wall',
+    '%\bapps\b%i'         => 'magic tools',
+    '%\bapp\b%i'          => 'magic tool',
+    '%\bsoftware\b%i'     => 'magic tool',
+    '%\bdatabases\b%i'    => 'number caves',
+    '%\bdatabase\b%i'     => 'number cave',
+    '%\bservers\b%i'      => 'big magic rocks',
+    '%\bserver\b%i'       => 'big magic rock',
+    '%\bpasswords\b%i'    => 'secret grunts',
+    '%\bpassword\b%i'     => 'secret grunt',
+    // Abstract concepts — irregular plurals first.
+    '%\bstrategies\b%i'   => 'hunt plans',
+    '%\bstrategy\b%i'     => 'hunt plan',
+    '%\bprocesses\b%i'    => 'ways of doing',
+    '%\bprocess\b%i'      => 'way of doing',
+    '%\bideas\b%i'        => 'thoughts',
+    '%\bidea\b%i'         => 'thought',
+    '%\bprojects\b%i'     => 'build things',
+    '%\bproject\b%i'      => 'build thing',
+    '%\bsystems\b%i'      => 'many parts things',
+    '%\bsystem\b%i'       => 'many parts thing',
+    '%\bdata\b%i'         => 'many numbers',
+    '%\binformation\b%i'  => 'knowing',
+    '%\bknowledge\b%i'    => 'cave wisdom',
+    '%\bgoals\b%i'        => 'want things',
+    '%\bgoal\b%i'         => 'want thing',
+    '%\bproblems\b%i'     => 'bad things',
+    '%\bproblem\b%i'      => 'bad thing',
+    '%\bsolutions\b%i'    => 'fix things',
+    '%\bsolution\b%i'     => 'fix thing',
+    '%\bmeetings\b%i'     => 'tribe gathers',
+    '%\bmeeting\b%i'      => 'tribe gather',
+    '%\bpresentations\b%i' => 'show tribes',
+    '%\bpresentation\b%i' => 'show tribe',
+    '%\breports\b%i'      => 'tribe mark piles',
+    '%\breport\b%i'       => 'tell tribe marks',
+    '%\bdocuments\b%i'    => 'marks on rocks',
+    '%\bdocument\b%i'     => 'marks on rock',
+    '%\bschedules\b%i'    => 'when do things',
+    '%\bschedule\b%i'     => 'when do thing',
+    '%\bdeadlines\b%i'    => 'MUST do nows',
+    '%\bdeadline\b%i'     => 'MUST do now',
+    '%\bbudgets\b%i'      => 'shiny rock counts',
+    '%\bbudget\b%i'       => 'shiny rock count',
+    '%\bwind\b%i'         => 'sky breath',
+    // People — irregular plurals first.
+    '%\bpeople\b%i'       => 'tribe',
+    '%\bpersons\b%i'      => 'tribe ones',
+    '%\bperson\b%i'       => 'one tribe',
+    '%\bfriends\b%i'      => 'cave-friends',
+    '%\bfriend\b%i'       => 'cave-friend',
+    '%\bleaders\b%i'      => 'chiefs',
+    '%\bleader\b%i'       => 'chief',
+    '%\bbosses\b%i'       => 'big chiefs',
+    '%\bboss\b%i'         => 'big chief',
+    '%\bmanagers\b%i'     => 'big chiefs',
+    '%\bmanager\b%i'      => 'big chief',
+    '%\bteams\b%i'        => 'tribe groups',
+    '%\bteam\b%i'         => 'tribe group',
+    '%\bchildren\b%i'     => 'small ones',
+    '%\bkids\b%i'         => 'small ones',
+    '%\bkid\b%i'          => 'small one',
+    '%\bwomen\b%i'        => 'cave women',
+    '%\bwoman\b%i'        => 'cave woman',
+    '%\bmen\b%i'          => 'cave men',
+    '%\bman\b%i'          => 'cave man',
+    '%\bcustomers\b%i'    => 'trade people',
+    '%\bcustomer\b%i'     => 'trade person',
+    '%\busers\b%i'        => 'tool people',
+    '%\buser\b%i'         => 'tool person',
+    // Places — irregular plurals first.
+    '%\boffices\b%i'      => 'work caves',
+    '%\boffice\b%i'       => 'work cave',
+    '%\bcities\b%i'       => 'big tribe places',
+    '%\bcity\b%i'         => 'big tribe place',
+    '%\btowns\b%i'        => 'tribe places',
+    '%\btown\b%i'         => 'tribe place',
+    '%\bcountries\b%i'    => 'big lands',
+    '%\bcountry\b%i'      => 'big land',
+    '%\bworld\b%i'        => 'all land',
+    '%\bschools\b%i'      => 'learning caves',
+    '%\bschool\b%i'       => 'learning cave',
+    '%\bhospitals\b%i'    => 'healing caves',
+    '%\bhospital\b%i'     => 'healing cave',
+    '%\bstores\b%i'       => 'trade caves',
+    '%\bstore\b%i'        => 'trade cave',
+    '%\brestaurants\b%i'  => 'food caves',
+    '%\brestaurant\b%i'   => 'food cave',
+    '%\bhouses\b%i'       => 'caves',
+    '%\bhouse\b%i'        => 'cave',
+    '%\bhome\b%i'         => 'cave',
+    // Resources.
+    '%\bmoney\b%i'        => 'shiny rocks',
+    '%\bfood\b%i'         => 'FOOD',
+    '%\bfire\b%i'         => 'FIRE',
+    '%\bwater\b%i'        => 'WATER',
+    '%\btools\b%i'        => 'make things',
+    '%\btool\b%i'         => 'make thing',
+    '%\bweapons\b%i'      => 'hurt sticks',
+    '%\bweapon\b%i'       => 'hurt stick',
+    // Qualities.
+    '%\bgood\b%i'         => 'GOOD',
+    '%\bbad\b%i'          => 'BAD',
+    '%\bstrong\b%i'       => 'STRONG',
+    '%\bfast\b%i'         => 'quick quick',
+    '%\bslow\b%i'         => 'slow slow',
+    '%\bbig\b%i'          => 'BIG',
+    '%\bsmall\b%i'        => 'tiny',
+    '%\bimportant\b%i'    => 'BIG thing',
+    '%\bdifficult\b%i'    => 'hard thing',
+    '%\beasy\b%i'         => 'simple thing',
+  ];
+
+  $text = preg_replace(array_keys($map), array_values($map), $text);
+
+  if (rand(0, 3) === 0) {
+    $text = 'UGH. ' . $text;
   }
 
-  // --- 4. Article trimming ---
-  $text = preg_replace('%\bthe\b%i', '', $text);
+  return $text;
+}
 
-  // --- 5. Cleanup ---
-  $text = preg_replace('/\s+/', ' ', $text);
-  $text = preg_replace('/\s+([.,!?])/', '$1', $text);
+/**
+ * Add random grunt flavor.
+ */
+function caveman_add_flavor($text) {
+  if (rand(0, 4) === 0) {
+    $text .= ' UNGA!';
+  }
+  return $text;
+}
 
-  // --- 6. Flavor ---
-  if ($intensity === 'high') {
-    if (rand(0, 3) === 0) {
-      $text = 'me think ' . $text;
-    }
-    if (rand(0, 3) === 0) {
-      $text .= ' UNGA!';
+/**
+ * Repeat first chunk for emphasis.
+ */
+function caveman_emphasis($text) {
+  if (rand(0, 2) === 0) {
+    $parts = explode('.', $text);
+    if (!empty($parts[0])) {
+      $text .= '. ' . trim($parts[0]) . '.';
     }
   }
-
-  return trim($text);
+  return $text;
 }
 
 /**
@@ -212,7 +442,7 @@ function caveman_transform($text, $intensity = 'medium') {
  */
 function caveman_filter_tips($filter, $format, $long = FALSE) {
   if (!empty($filter->settings['caveman_display_tip'])) {
-    return t('Ugh. Caveman speak enabled. Keep text short and strong.');
+    return t('UGH. Caveman speak. Words short. Tribe understand.');
   }
   return NULL;
 }
